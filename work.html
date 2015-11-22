@@ -81,7 +81,89 @@ conversions &lt;- c(&quot;NA&quot;,&quot;&quot;, &quot;DIV0&quot;)
 train &lt;- read.csv('pml-training.csv', na.strings=conversions)
 test &lt;- read.csv('pml-testing.csv', na.strings=conversions)
 
-summary(train)</code></pre>
+#summary(train)</code></pre>
+<p>The summary output was used here, but I have included in the end of the file since it has a very big size.</p>
+<p>We can take a look at the levels of the classe, which talks about the quality of the result:</p>
+<pre class="r"><code>summary(train$classe)</code></pre>
+<pre><code>##    A    B    C    D    E 
+## 5580 3797 3422 3216 3607</code></pre>
+<p>Some of the columns are not interesting for the classification algorythm. We do not want our model to classificate based on timestamps or sequential ids, neither username and etc.</p>
+<pre class="r"><code>remove &lt;- c (&quot;X&quot;, &quot;new_window&quot;, &quot;user_name&quot;, &quot;raw_timestamp_part_1&quot;, &quot;raw_timestamp_part_2&quot;, &quot;cvtd_timestamp&quot;)
+train.clean &lt;- train[,!(names(train) %in% remove)]
+test.clean &lt;- test[,!(names(train) %in% remove)]</code></pre>
+<p>Also missing values could influence negativelly on our model, so we will remove columns that have too many of then.</p>
+<pre class="r"><code>cols &lt;- dim(train.clean)[2]
+na_cols &lt;- vector(length=cols)
+for (i in 1:cols) { 
+  na_cols[i] &lt;- sum(is.na(train.clean[,i]))
+}
+
+more_than_10_na &lt;- which(na_cols &lt; 10)
+train.clean &lt;- train.clean[,more_than_10_na]
+test.clean &lt;- test.clean[,more_than_10_na]</code></pre>
+</div>
+<div id="random-forest" class="section level2">
+<h2>Random Forest</h2>
+<p>We will use a Random Forest to predict the classe variable of the training set. We will also separate a validation set in the 60% (training) 40% (validation) proportion.</p>
+<pre class="r"><code>library(caret)</code></pre>
+<pre><code>## Loading required package: lattice
+## Loading required package: ggplot2</code></pre>
+<pre class="r"><code>separation &lt;- createDataPartition(y=train.clean$classe, p=0.6, list=FALSE)
+
+training &lt;- train.clean[separation,]
+validation &lt;- train.clean[-separation,]
+testing &lt;- test.clean</code></pre>
+<pre class="r"><code>library(randomForest)</code></pre>
+<pre><code>## randomForest 4.6-12
+## Type rfNews() to see new features/changes/bug fixes.</code></pre>
+<pre class="r"><code>fitForest &lt;- randomForest(classe ~ ., data = training, method = &quot;class&quot;)
+prediction &lt;- predict(fitForest, type=&quot;class&quot;)
+table(training$classe, prediction)</code></pre>
+<pre><code>##    prediction
+##        A    B    C    D    E
+##   A 3347    0    0    0    1
+##   B    4 2272    3    0    0
+##   C    0   12 2041    1    0
+##   D    0    0   13 1916    1
+##   E    0    0    0    3 2162</code></pre>
+<pre class="r"><code>right &lt;- table(prediction == training$classe)
+in_error &lt;- as.vector(100 * (1-right[&quot;TRUE&quot;] / sum(right)))</code></pre>
+<p>The model has a very low in sample error <strong>0.3226902 %</strong>. Let’s see how it performs on the cross validation set.</p>
+<pre class="r"><code>prediction &lt;- predict(fitForest, newdata=validation, type=&quot;class&quot;)
+table(validation$classe, prediction)</code></pre>
+<pre><code>##    prediction
+##        A    B    C    D    E
+##   A 2232    0    0    0    0
+##   B    2 1514    2    0    0
+##   C    0    3 1364    1    0
+##   D    0    0   15 1270    1
+##   E    0    0    0    4 1438</code></pre>
+<pre class="r"><code>right = table(prediction == validation$classe)
+out_error = as.vector(100 * (1-right[&quot;TRUE&quot;] / sum(right)))</code></pre>
+<p>This is also a low out sample error <strong>0.3568697 %</strong>.</p>
+</div>
+<div id="predicting-the-cases-for-test-data" class="section level2">
+<h2>Predicting the cases for test data:</h2>
+<pre class="r"><code>destDir = &quot;./results&quot;
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0(destDir, &quot;/&quot;, &quot;problem_id_&quot;,i,&quot;.txt&quot;)
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+if (!file.exists(destDir)) {
+    dir.create(destDir)
+}
+prediction &lt;- predict(fitForest, newdata=testing, type=&quot;class&quot;)
+pml_write_files(prediction)</code></pre>
+</div>
+<div id="conclusions" class="section level2">
+<h2>Conclusions</h2>
+<p>The random forest does perform well, with close to 99% accuracy for both sample errors, and the model sucessfully classifies the 20 test cases.</p>
+<div id="appendix-summary-of-the-data" class="section level3">
+<h3>Appendix (summary of the data)</h3>
+<pre class="r"><code>summary(train)</code></pre>
 <pre><code>##        X            user_name    raw_timestamp_part_1 raw_timestamp_part_2
 ##  Min.   :    1   adelmo  :3892   Min.   :1.322e+09    Min.   :   294      
 ##  1st Qu.: 4906   carlitos:3112   1st Qu.:1.323e+09    1st Qu.:252912      
@@ -450,84 +532,7 @@ summary(train)</code></pre>
 ##  E:3607  
 ##          
 ## </code></pre>
-<p>We can take a look at the levels of the classe, which talks about the quality of the result:</p>
-<pre class="r"><code>summary(train$classe)</code></pre>
-<pre><code>##    A    B    C    D    E 
-## 5580 3797 3422 3216 3607</code></pre>
-<p>Some of the columns are not interesting for the classification algorythm. We do not want our model to classificate based on timestamps or sequential ids, neither username and etc.</p>
-<pre class="r"><code>remove &lt;- c (&quot;X&quot;, &quot;new_window&quot;, &quot;user_name&quot;, &quot;raw_timestamp_part_1&quot;, &quot;raw_timestamp_part_2&quot;, &quot;cvtd_timestamp&quot;)
-train.clean &lt;- train[,!(names(train) %in% remove)]
-test.clean &lt;- test[,!(names(train) %in% remove)]</code></pre>
-<p>Also missing values could influence negativelly on our model, so we will remove columns that have too many of then.</p>
-<pre class="r"><code>cols &lt;- dim(train.clean)[2]
-na_cols &lt;- vector(length=cols)
-for (i in 1:cols) { 
-  na_cols[i] &lt;- sum(is.na(train.clean[,i]))
-}
-
-more_than_10_na &lt;- which(na_cols &lt; 10)
-train.clean &lt;- train.clean[,more_than_10_na]
-test.clean &lt;- test.clean[,more_than_10_na]</code></pre>
 </div>
-<div id="random-forest" class="section level2">
-<h2>Random Forest</h2>
-<p>We will use a Random Forest to predict the classe variable of the training set. We will also separate a validation set in the 60% (training) 40% (validation) proportion.</p>
-<pre class="r"><code>library(caret)</code></pre>
-<pre><code>## Loading required package: lattice
-## Loading required package: ggplot2</code></pre>
-<pre class="r"><code>separation &lt;- createDataPartition(y=train.clean$classe, p=0.6, list=FALSE)
-
-training &lt;- train.clean[separation,]
-validation &lt;- train.clean[-separation,]
-testing &lt;- test.clean</code></pre>
-<pre class="r"><code>library(randomForest)</code></pre>
-<pre><code>## randomForest 4.6-12
-## Type rfNews() to see new features/changes/bug fixes.</code></pre>
-<pre class="r"><code>fitForest &lt;- randomForest(classe ~ ., data = training, method = &quot;class&quot;)
-prediction &lt;- predict(fitForest, type=&quot;class&quot;)
-table(training$classe, prediction)</code></pre>
-<pre><code>##    prediction
-##        A    B    C    D    E
-##   A 3347    0    0    0    1
-##   B    4 2272    3    0    0
-##   C    0   12 2041    1    0
-##   D    0    0   13 1916    1
-##   E    0    0    0    3 2162</code></pre>
-<pre class="r"><code>right &lt;- table(prediction == training$classe)
-in_error &lt;- as.vector(100 * (1-right[&quot;TRUE&quot;] / sum(right)))</code></pre>
-<p>The model has a very low in sample error <strong>0.3226902 %</strong>. Let’s see how it performs on the cross validation set.</p>
-<pre class="r"><code>prediction &lt;- predict(fitForest, newdata=validation, type=&quot;class&quot;)
-table(validation$classe, prediction)</code></pre>
-<pre><code>##    prediction
-##        A    B    C    D    E
-##   A 2232    0    0    0    0
-##   B    2 1514    2    0    0
-##   C    0    3 1364    1    0
-##   D    0    0   15 1270    1
-##   E    0    0    0    4 1438</code></pre>
-<pre class="r"><code>right = table(prediction == validation$classe)
-out_error = as.vector(100 * (1-right[&quot;TRUE&quot;] / sum(right)))</code></pre>
-<p>This is also a low out sample error <strong>0.3568697 %</strong>.</p>
-</div>
-<div id="predicting-the-cases-for-test-data" class="section level2">
-<h2>Predicting the cases for test data:</h2>
-<pre class="r"><code>destDir = &quot;./results&quot;
-pml_write_files = function(x){
-  n = length(x)
-  for(i in 1:n){
-    filename = paste0(destDir, &quot;/&quot;, &quot;problem_id_&quot;,i,&quot;.txt&quot;)
-    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
-  }
-}
-if (!file.exists(destDir)) {
-    dir.create(destDir)
-}
-prediction &lt;- predict(fitForest, newdata=testing, type=&quot;class&quot;)
-pml_write_files(prediction)</code></pre>
-</div>
-<div id="conclusions" class="section level2">
-<h2>Conclusions</h2>
-<p>The random forest does perform well, with close to 99% accuracy for both sample errors, and the model sucessfully classifies the 20 test cases.</p>
 </div>
 
 
