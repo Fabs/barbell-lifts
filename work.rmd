@@ -1,0 +1,110 @@
+---
+title: "Are you doing your Babel Lifts right?"
+author: "Fabricio Nascimento"
+date: "11/22/2015"
+output: html_document
+---
+
+## Summary
+
+Using fitbit dataset from PUC (http://groupware.les.inf.puc-rio.br/har) we will try to devise an algorythm to predict weather a series of barbel lifts where performed correctly or incorrectly. This report will discuss the design of a supervised learning alforythm using the training set provided and verifing its performance on the test set, also provided.
+
+## Cleaning the Data
+```{r}
+set.seed(42)
+
+conversions <- c("NA","", "DIV0")
+
+train <- read.csv('pml-training.csv', na.strings=conversions)
+test <- read.csv('pml-testing.csv', na.strings=conversions)
+
+#summary(train)
+```
+
+The summary output was used here, but I have included in the end of the file since it has a very big size.
+
+We can take a look at the levels of the classe, which talks about the quality of the result:
+```{r}
+summary(train$classe)
+```
+
+Some of the columns are not interesting for the classification algorythm. We do not want our model to classificate based on timestamps or sequential ids, neither username and etc.
+
+```{r}
+remove <- c ("X", "new_window", "user_name", "raw_timestamp_part_1", "raw_timestamp_part_2", "cvtd_timestamp")
+train.clean <- train[,!(names(train) %in% remove)]
+test.clean <- test[,!(names(train) %in% remove)]
+```
+
+Also missing values could influence negativelly on our model, so we will remove columns that have too many of then.
+
+```{r}
+cols <- dim(train.clean)[2]
+na_cols <- vector(length=cols)
+for (i in 1:cols) { 
+  na_cols[i] <- sum(is.na(train.clean[,i]))
+}
+
+more_than_10_na <- which(na_cols < 10)
+train.clean <- train.clean[,more_than_10_na]
+test.clean <- test.clean[,more_than_10_na]
+```
+
+## Random Forest
+
+We will use a Random Forest to predict the classe variable of the training set. We will also separate a validation set in the 60% (training) 40% (validation) proportion.
+
+```{r}
+library(caret)
+separation <- createDataPartition(y=train.clean$classe, p=0.6, list=FALSE)
+
+training <- train.clean[separation,]
+validation <- train.clean[-separation,]
+testing <- test.clean
+```
+
+```{r}
+library(randomForest)
+fitForest <- randomForest(classe ~ ., data = training, method = "class")
+prediction <- predict(fitForest, type="class")
+table(training$classe, prediction)
+right <- table(prediction == training$classe)
+in_error <- as.vector(100 * (1-right["TRUE"] / sum(right)))
+```
+
+The model has a very low in sample error **`r in_error` %**. Let's see how it performs on the cross validation set.
+
+```{r}
+prediction <- predict(fitForest, newdata=validation, type="class")
+table(validation$classe, prediction)
+right = table(prediction == validation$classe)
+out_error = as.vector(100 * (1-right["TRUE"] / sum(right)))
+```
+
+This is also a low out sample error **`r out_error` %**.
+
+##Predicting the cases for test data:
+
+```{r}
+destDir = "./results"
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0(destDir, "/", "problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+if (!file.exists(destDir)) {
+    dir.create(destDir)
+}
+prediction <- predict(fitForest, newdata=testing, type="class")
+pml_write_files(prediction)
+```
+
+## Conclusions
+The random forest does perform well, with close to 99% accuracy for both sample errors, and the model sucessfully classifies the 20 test cases.
+
+###Appendix (summary of the data)
+```{r}
+summary(train)
+```
